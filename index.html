@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Pose Dataset Curator — Preview</title>
+<style>
+body{font-family:system-ui,Segoe UI,Roboto,Arial;color:#222;padding:18px;max-width:850px}
+h1{margin:0 0 8px}
+textarea{width:100%;height:160px;font-family:monospace}
+.block{border:1px solid #ddd;padding:10px;margin:10px 0;background:#fafafa}
+.link{color:#0366d6}
+.bad{color:#a00}
+.good{color:#0a0}
+.pre{white-space:pre-wrap;font-family:monospace}
+</style>
+</head>
+<body>
+<h1>Pose Dataset Curator — Preview</h1>
+<p>Paste article HTML/text or drop an HTML file. I look for .csv and .json links and let you preview/validate them. No network calls — you keep provenance explicit.</p>
+<textarea id="input" placeholder="Paste article HTML or text here"></textarea>
+<div><button id="scan">Scan for CSV/JSON links</button>
+<input id="file" type="file" accept="text/html,text/*"></div>
+<div id="results"></div>
+<script>
+function discover(text){
+  const urls = new Set();
+  // simple link extraction from href attributes and plain URLs
+  const hrefRe = /href\s*=\s*(['\"])(.*?)\1/ig;
+  let m;
+  while((m=hrefRe.exec(text))){ urls.add(m[2]); }
+  const urlPlain = /https?:\/\/[^\s\'\"<>]+/ig;
+  while((m=urlPlain.exec(text))){ urls.add(m[0]); }
+  // filter for .csv or .json
+  return Array.from(urls).filter(u => /\.(csv|json)(\?|$)/i.test(u));
+}
+
+function renderLink(u){
+  const el = document.createElement('div'); el.className='block';
+  const a = document.createElement('a'); a.href='#'; a.textContent = u; a.className='link';
+  el.appendChild(a);
+  const info = document.createElement('div'); info.className='pre'; info.textContent='(paste file content into the preview box below to analyze)';
+  el.appendChild(info);
+  const ta = document.createElement('textarea'); ta.placeholder = 'Paste the CSV or JSON content here to preview/validate'; ta.style.height='120px';
+  el.appendChild(ta);
+  const btn = document.createElement('button'); btn.textContent='Validate & Preview';
+  el.appendChild(btn);
+  const out = document.createElement('div'); out.className='block'; out.style.background='#fff'; el.appendChild(out);
+
+  btn.onclick = ()=>{
+    const content = ta.value.trim();
+    if(!content){ out.innerHTML='<div class="bad">No content provided. Paste the file contents for offline preview.</div>'; return; }
+    if(/\.csv(\?|$)/i.test(u)){
+      // simple CSV parse: split lines, split commas, no CSV dialect handling
+      const lines = content.split(/\r?\n/).filter(l=>l.length>0);
+      if(lines.length===0){ out.innerHTML='<div class="bad">Empty CSV content</div>'; return; }
+      const rows = lines.map(l=>l.split(','));
+      const headers = rows[0];
+      const ok = rows.every(r=>r.length===headers.length);
+      out.innerHTML = '<b>CSV Preview</b>\n Headers: '+headers.join(', ')+ (ok? ' <span class="good">(consistent)</span>':' <span class="bad">(inconsistent row lengths)</span>');
+      out.innerHTML += '<pre class="pre">\n'+rows.slice(1,6).map(r=>r.join(', ')).join('\n')+'</pre>';
+    } else {
+      try{
+        const parsed = JSON.parse(content);
+        const preview = Array.isArray(parsed) ? parsed.slice(0,5) : parsed;
+        out.innerHTML = '<b>JSON Preview</b>\n Type: '+(Array.isArray(parsed)?'array('+parsed.length+')':'object')+"\n<pre class='pre'>"+JSON.stringify(preview,null,2)+'</pre>';
+      }catch(e){ out.innerHTML = '<div class="bad">JSON parse error: '+e.message+'</div>'; }
+    }
+  };
+  return el;
+}
+
+document.getElementById('scan').onclick = ()=>{
+  const text = document.getElementById('input').value;
+  const results = discover(text);
+  const container = document.getElementById('results'); container.innerHTML='';
+  if(results.length===0){ container.innerHTML='<div class="block">No CSV/JSON links found.</div>'; return; }
+  results.forEach(u=>container.appendChild(renderLink(u)));
+};
+
+document.getElementById('file').onchange = e=>{
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader(); r.onload = ev=>{ document.getElementById('input').value = ev.target.result; document.getElementById('scan').click(); };
+  r.readAsText(f);
+};
+</script>
+</body>
+</html>
